@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 // Copyright 2023 Immersve
 
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.28;
 
 import { IFundsStorageFactory } from "./interfaces/IFundsStorageFactory.sol";
 import { IFundsAdmin } from "./interfaces/IFundsAdmin.sol";
@@ -11,11 +11,9 @@ import { BeaconProxy } from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.so
 import { UpgradeableBeacon } from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import { ERC1967Utils } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable, IFundsStorageFactory, IFundsAdmin {
 
@@ -61,12 +59,6 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
   /// @inheritdoc IFundsAdmin
   bytes32 public constant SETTLER_ROLE = keccak256("SETTLER_ROLE");
 
-  /// @inheritdoc IFundsAdmin
-  bytes32 public constant REFUND_TARGET_MANAGER_ROLE = keccak256("REFUND_TARGET_MANAGER_ROLE");
-
-  /// @inheritdoc IFundsAdmin
-  bytes32 public constant REFUND_TARGET_ROLE = keccak256("REFUND_TARGET_ROLE");
-
   /**
     * Mapping of token address to funds settlement address. The settlement
     * address is the only address to which funds storage instance token deposits
@@ -81,9 +73,23 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
   mapping(address => uint256) internal _fundsStorageSettlementNonce;
 
   /**
-   * The address to withdraw refunds from
+   * @notice This field is DEPRECATED. Refunder address will be dynamic
+   * from now on. We are not removing this field from the contract to keep
+   * storage layout compatibility
    */
   address internal _refunderAddress;
+
+  /**
+   * Indicates if Direct Spend funding mode is enabled
+   */
+  bool internal _directSpendEnabled;
+
+  /**
+   * @dev indicates the amount of seconds after which a
+   * direct spend transaction is expired in case a reversal
+   * is being executed against it
+   */
+  uint256 internal _directSpendReversalCutoffSeconds;
 
   /// @custom:oz-upgrades-unsafe-allow constructor
   constructor() {
@@ -117,6 +123,8 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     }
     _buildNumber = buildNumber;
     _commitId = commitId;
+    _directSpendEnabled = false; // defaults to disabled
+    _directSpendReversalCutoffSeconds = 7 days;
   }
 
   function _initialize() internal reinitializer(2) onlyProxy {
@@ -170,8 +178,8 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
   }
 
   /// @inheritdoc IFundsStorageFactory
-  function createFundsStorage(address token, string calldata name) external onlyProxy returns(address) {
-    requireTokenSupported(token);
+  function createFundsStorage(address token, string calldata name, FundingMode fundingMode) external onlyProxy returns(address) {
+    _requireTokenSupported(token);
     /*
      * Salt for create2 will be sender address padded with first 96 bits of hash(name)
      * Bitmask is equal to: ethers.toBeHex(((1n << 96n) - 1n) << 160n)
@@ -185,7 +193,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
      * calculation.
      */
     BeaconProxy proxy = new BeaconProxy{ salt: bytes32(salt) }( address(_fundsStorageBeacon), new bytes(0));
-    FundsStorageLogic(address(proxy)).initialize(address(this), token, name);
+    FundsStorageLogic(address(proxy)).initialize(address(this), token, name, fundingMode);
     _fundsStorageInstances[address(proxy)].isInstance = true;
     emit FundsStorageCreated(token, address(proxy), name);
     return address(proxy);
@@ -214,42 +222,91 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
      * disallowed.
      */
     if(merkleRoot != bytes32(0)) revert MerkleRootInvalid();
-    if(!isFundsStorage(from)) revert SettlementSourceInvalid(from);
+    IFundsStorage fundsStorage = _requireFundsStorage(from);
     if(nonce != _fundsStorageSettlementNonce[from] + 1) revert NonceOutOfSequence();
-    IFundsStorage fundsStorage = IFundsStorage(from);
     fundsStorage.transferToSettlementAddress(amount);
     _fundsStorageSettlementNonce[from] = nonce;
     emit Settlement(from, amount, nonce);
   }
 
   /// @inheritdoc IFundsAdmin
-  function refund(
+  function addStorageLiquidity(
     address refundee,
+    address sourceAddress,
     uint256 amount,
     uint256 nonce,
     bytes32 merkleRoot
   ) external onlyRole(SETTLER_ROLE) whenNotPaused {
-    // We are checking that the refundee has a REFUND_TARGET_ROLE because this role is granted
-    // after registering a Funding Channel with Immersve Backend. Once onboarded, Immersve will
-    // grant the refundee (an instance of a FundsStorage contract) the role of REFUND_TARGET
-    // so it can start receiving funds in the case of refunds. The granting of this role makes sure
-    // that the refundee was created by the FundsManager using the isFundsStorage function
     if(merkleRoot != bytes32(0)) revert MerkleRootInvalid();
-    if(!hasRole(REFUND_TARGET_ROLE, refundee)) revert RefundTargetNotAuthorized({ target: refundee });
     if(nonce != _fundsStorageSettlementNonce[refundee] + 1) revert NonceOutOfSequence();
-    if(_refunderAddress == address(0)) revert RefunderNotConfigured();
-    IFundsStorage fundsStorage = IFundsStorage(refundee);
+    IFundsStorage fundsStorage = _requireFundsStorage(refundee);
     address tokenAddress = fundsStorage.getToken();
-    requireTokenSupported(tokenAddress);
-    IERC20 token = IERC20(tokenAddress);
-    SafeERC20.safeTransferFrom(token, _refunderAddress, refundee, amount);
+    _requireTokenSupported(tokenAddress);
+    fundsStorage.addStorageLiquidity(sourceAddress, amount);
     _fundsStorageSettlementNonce[refundee] = nonce;
-    emit Refund(refundee, amount, nonce);
+    emit StorageLiquidityAdded(refundee, sourceAddress, amount, nonce);
   }
 
   /// @inheritdoc IFundsAdmin
-  function requireTokenSupported(address token) public view {
+  function directSpendDebit(
+    address storageAddress,
+    address spender,
+    uint256 amount,
+    bytes32 idempotencyKey
+  ) external onlyRole(SETTLER_ROLE) whenNotPaused {
+    _requireDirectSpendEnabled();
+    IFundsStorage fundsStorage = _requireFundsStorage(storageAddress);
+    fundsStorage.directSpendDebit(spender, amount, idempotencyKey);
+  }
+
+  /// @inheritdoc IFundsAdmin
+  function directSpendGetTransaction(address storageAddress, bytes32 idempotencyKey) external view returns(DirectSpendTransaction memory) {
+    IFundsStorage fundsStorage = _requireFundsStorage(storageAddress);
+    return fundsStorage.directSpendGetTransaction(idempotencyKey);
+  }
+
+    /// @inheritdoc IFundsAdmin
+  function directSpendRefund(
+    address storageAddress,
+    address destinationAddress,
+    address sourceAddress,
+    uint256 amount,
+    bytes32 idempotencyKey
+  ) external onlyRole(SETTLER_ROLE) whenNotPaused {
+    _requireDirectSpendEnabled();
+    IFundsStorage fundsStorage = _requireFundsStorage(storageAddress);
+    fundsStorage.directSpendRefund(destinationAddress, sourceAddress, amount, idempotencyKey);
+  }
+
+  /// @inheritdoc IFundsAdmin
+  function directSpendReverse(
+    address storageAddress,
+    bytes32 originalIdempotencyKey,
+    uint256 amount,
+    bytes32 idempotencyKey
+  ) external onlyRole(SETTLER_ROLE) whenNotPaused {
+    _requireDirectSpendEnabled();
+    IFundsStorage fundsStorage = _requireFundsStorage(storageAddress);
+    fundsStorage.directSpendReverse(originalIdempotencyKey, amount, idempotencyKey);
+  }
+
+  /**
+   * @notice Verifies that the token is supported by the admin contract.
+   *  To be able to support a token, it's settlement address needs to be set
+   *  by {setSettlementAddress}
+   * @param token The ERC-20 token to verify
+   */
+  function _requireTokenSupported(address token) internal view {
     if (_tokenSettlementAddress[token] == address(0)) revert TokenNotSupported({ token: token });
+  }
+
+  function _requireDirectSpendEnabled() internal view {
+    if (!_directSpendEnabled) revert DirectSpendDisabled();
+  }
+
+  function _requireFundsStorage(address storageAddress) internal view returns (IFundsStorage) {
+    if(!isFundsStorage(storageAddress)) revert StorageAccountInvalid(storageAddress);
+    return IFundsStorage(storageAddress);
   }
 
   /// @inheritdoc IFundsAdmin
@@ -303,39 +360,9 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
   }
 
   /// @inheritdoc IFundsAdmin
-  function grantRefundTargetManagerRole(address managerAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
-    _grantRole(REFUND_TARGET_MANAGER_ROLE, managerAddress);
-  }
-
-  /// @inheritdoc IFundsAdmin
-  function revokeRefundTargetManagerRole(address managerAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
-    _revokeRole(REFUND_TARGET_MANAGER_ROLE, managerAddress);
-  }
-
-  /// @inheritdoc IFundsAdmin
-  function requireWithdrawalSignerAuthorized(address signerAuthorizer) external view  whenNotPaused {
+  // solhint-disable-next-line private-vars-leading-underscore
+  function _requireWithdrawalSignerAuthorized(address signerAuthorizer) external view  whenNotPaused {
     if (!hasRole(WITHDRAWAL_SIGNER_ROLE, signerAuthorizer)) revert SignatureUnauthorized();
-  }
-
-  /// @inheritdoc IFundsAdmin
-  function setRefunderAddress(address refunderAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
-    _refunderAddress = refunderAddress;
-  }
-
-  /// @inheritdoc IFundsAdmin
-  function getRefunderAddress() external view returns(address) {
-    return _refunderAddress;
-  }
-
-  /// @inheritdoc IFundsAdmin
-  function grantRefundTargetRole(address refundTarget) external onlyRole(REFUND_TARGET_MANAGER_ROLE) {
-    if(!isFundsStorage(refundTarget)) revert RefundTargetInvalid({ target: refundTarget });
-    _grantRole(REFUND_TARGET_ROLE, refundTarget);
-  }
-
-  /// @inheritdoc IFundsAdmin
-  function revokeRefundTargetRole(address refundee) external onlyRole(REFUND_TARGET_MANAGER_ROLE) {
-    _revokeRole(REFUND_TARGET_ROLE, refundee);
   }
 
   /// @inheritdoc IFundsAdmin
@@ -346,5 +373,23 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
   /// @inheritdoc IFundsAdmin
   function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
     _unpause();
+  }
+
+  /// @inheritdoc IFundsAdmin
+  function enableDirectSpend() external onlyRole(DEFAULT_ADMIN_ROLE) {
+    _directSpendEnabled = true;
+  }
+
+  /// @inheritdoc IFundsAdmin
+  function disableDirectSpend() external onlyRole(DEFAULT_ADMIN_ROLE) {
+    _directSpendEnabled = false;
+  }
+
+  function setDirectSpendReversalCutoffSeconds(uint256 expiry) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    _directSpendReversalCutoffSeconds = expiry;
+  }
+
+  function getDirectSpendReversalCutoffSeconds() external view returns(uint256) {
+    return _directSpendReversalCutoffSeconds;
   }
 }

@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: UNLICENSED
 // Copyright 2023 Immersve
 
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.28;
 
+import { ITypes } from "./ITypes.sol";
 
 /**
  * @notice Factory for creating FundsStorage instances.
  */
-interface IFundsStorageFactory {
+interface IFundsStorageFactory is ITypes {
 
   /**
     * @notice Event logged when a new FundsStorage is created.
@@ -51,7 +52,7 @@ interface IFundsStorageFactory {
    * @param token The token supported by the funds storage.
    * @param name The name of the funds storage.
    */
-  function createFundsStorage(address token, string calldata name) external returns(address);
+  function createFundsStorage(address token, string calldata name, FundingMode fundingMode) external returns(address);
 
   /**
     * @notice Check if an address is for a FundsStorage created by this factory.

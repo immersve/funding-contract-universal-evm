@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 // Copyright 2023 Immersve
 
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.28;
 
 import { IFundsStorage } from "./interfaces/IFundsStorage.sol";
 import { IFundsAdmin } from "./interfaces/IFundsAdmin.sol";
@@ -38,6 +38,13 @@ contract FundsStorageLogic is IFundsStorage, ReentrancyGuardUpgradeable, EIP712U
   mapping(address => uint256) internal _usedNonces;
 
   /**
+   * @dev Keep track of already used idempotency keys for debit and refund operations
+   */
+  mapping(bytes32 => DirectSpendTransaction) internal _directSpendTransactions;
+
+  FundingMode internal _fundingMode;
+
+  /**
     * @dev This initializer will be invoked once for each BeaconProxy created by
     *   the FundsStorageFactory.
     * @param adminAddress The address of the FundsAdmin which supplies
@@ -45,10 +52,11 @@ contract FundsStorageLogic is IFundsStorage, ReentrancyGuardUpgradeable, EIP712U
     * @param token The ERC-20 token to be supported by this funds storage.
     * @param name The name of the funds storage.
     */
-  function initialize(address adminAddress, address token, string calldata name) public initializer {
+  function initialize(address adminAddress, address token, string calldata name, FundingMode fundingMode) public initializer {
     _fundsAdmin = IFundsAdmin(adminAddress);
     _token = IERC20(token);
     _name = name;
+    _fundingMode = fundingMode;
     /*
      * Initialize the EIP-712 domain separator used when verifying withdraw signatures.
      */
@@ -71,12 +79,18 @@ contract FundsStorageLogic is IFundsStorage, ReentrancyGuardUpgradeable, EIP712U
   }
 
   /// @inheritdoc IFundsStorage
+  function getFundingMode() external view returns(FundingMode) {
+    return _fundingMode;
+  }
+
+  /// @inheritdoc IFundsStorage
   function withdraw(
       uint256 amount,
       uint256 expiryDate,
       uint256 nonce,
       bytes memory _signature
   ) external nonReentrant {
+      _requireFundingMode(FundingMode.DEPOSIT);
       if(block.timestamp > expiryDate) revert ExpiryDatePassed();
       // check if the funds were already withdrawn with this nonce
       if(nonce != _usedNonces[msg.sender] + 1) revert NonceOutOfSequence();
@@ -96,14 +110,116 @@ contract FundsStorageLogic is IFundsStorage, ReentrancyGuardUpgradeable, EIP712U
    **/
   function _verifySignature(bytes32 digest, bytes memory signature) internal view {
       address signer = ECDSA.recover(digest, signature);
-      _fundsAdmin.requireWithdrawalSignerAuthorized(signer);
+      _fundsAdmin._requireWithdrawalSignerAuthorized(signer);
   }
 
   /// @inheritdoc IFundsStorage
   function transferToSettlementAddress(uint256 amount) external {
-    if(address(_fundsAdmin) != msg.sender) revert SettlementNotAuthorizedAccount(msg.sender);
+    _requireFundsAdmin(msg.sender);
     address settlementAddress = _fundsAdmin.getSettlementAddress(address(_token));
     if(settlementAddress == address(0)) revert TokenNotSupported({ token: address(_token) });
     SafeERC20.safeTransfer(_token, settlementAddress, amount);
+  }
+
+  /// @inheritdoc IFundsStorage
+  function directSpendDebit(address spender, uint256 amount, bytes32 idempotencyKey) external {
+    _requireFundingMode(FundingMode.APPROVAL);
+    _requireFundsAdmin(msg.sender);
+    _requireUniqueDirectSpendIdempotencyKey(idempotencyKey);
+    SafeERC20.safeTransferFrom(_token, spender, address(this), amount);
+    _directSpendTransactions[idempotencyKey] = DirectSpendTransaction(
+      amount,
+      block.timestamp,
+      spender,
+      DirectSpendOperationType.DEBIT, // operation
+      true, // exists?
+      0
+    );
+    emit DirectSpendDebit(spender, amount, idempotencyKey);
+  }
+
+  /// @inheritdoc IFundsStorage
+  function directSpendGetTransaction(bytes32 idempotencyKey) external view returns(DirectSpendTransaction memory) {
+    return _directSpendTransactions[idempotencyKey];
+  }
+
+  /// @inheritdoc IFundsStorage
+  function directSpendRefund(
+    address destinationAddress,
+    address sourceAddress,
+    uint256 amount,
+    bytes32 idempotencyKey
+  ) external {
+    _requireFundingMode(FundingMode.APPROVAL);
+    _requireFundsAdmin(msg.sender);
+    _requireUniqueDirectSpendIdempotencyKey(idempotencyKey);
+    SafeERC20.safeTransferFrom(_token, sourceAddress, destinationAddress, amount);
+    _directSpendTransactions[idempotencyKey] = DirectSpendTransaction(
+      amount,
+      block.timestamp,
+      destinationAddress,
+      DirectSpendOperationType.REFUND, // operation
+      true, // exists?
+      0
+    );
+    emit DirectSpendRefund(destinationAddress, amount, idempotencyKey);
+  }
+
+  /// @inheritdoc IFundsStorage
+  function directSpendReverse(
+    bytes32 originalIdempotencyKey,
+    uint256 amount,
+    bytes32 idempotencyKey
+  ) external {
+    _requireFundingMode(FundingMode.APPROVAL);
+    _requireFundsAdmin(msg.sender);
+    _requireUniqueDirectSpendIdempotencyKey(idempotencyKey);
+    DirectSpendTransaction memory directSpendTransaction = _directSpendTransactions[originalIdempotencyKey];
+    if(!directSpendTransaction.exists) revert DirectSpendTransactionNotFound();
+    if(directSpendTransaction.operationType != DirectSpendOperationType.DEBIT) revert OperationUnsupported();
+    _requireUnexpiredDirectSpendTransaction(directSpendTransaction);
+    uint256 availableReversalAmount = directSpendTransaction.amount - directSpendTransaction.reversedAmount;
+    if(amount > availableReversalAmount) revert DirectSpendReversalInsufficientFunds();
+    address destinationAddress = directSpendTransaction.fundingAddress;
+    SafeERC20.safeTransfer(_token, destinationAddress, amount);
+    _directSpendTransactions[originalIdempotencyKey].reversedAmount = directSpendTransaction.reversedAmount + amount;
+    _directSpendTransactions[idempotencyKey] = DirectSpendTransaction(
+      amount,
+      block.timestamp,
+      destinationAddress,
+      DirectSpendOperationType.REVERSAL, // operation
+      true, // exists?
+      amount
+    );
+    emit DirectSpendReversal(originalIdempotencyKey, destinationAddress, amount, idempotencyKey);
+  }
+
+  /// @inheritdoc IFundsStorage
+  function addStorageLiquidity(
+    address sourceAddress,
+    uint256 amount
+  ) external {
+    _requireFundsAdmin(msg.sender);
+    IERC20 token = IERC20(_token);
+    SafeERC20.safeTransferFrom(token, sourceAddress, address(this), amount);
+  }
+
+  function _requireFundingMode(FundingMode expectedFundingMode) internal view {
+    FundingMode currentFundingMode = _fundingMode;
+    if(currentFundingMode != expectedFundingMode) revert FundingModeInvalid(currentFundingMode, expectedFundingMode);
+  }
+
+  function _requireFundsAdmin(address sender) internal view {
+    if(address(_fundsAdmin) != sender) revert SenderAccountNotAuthorized(sender);
+  }
+
+  function _requireUniqueDirectSpendIdempotencyKey(bytes32 idempotencyKey) internal view {
+    DirectSpendTransaction memory directSpendTransaction = _directSpendTransactions[idempotencyKey];
+    if(directSpendTransaction.exists) revert IdempotencyKeyAlreadyUsed();
+  }
+
+  function _requireUnexpiredDirectSpendTransaction(DirectSpendTransaction memory transaction) internal {
+    uint256 transactionExpiryDate = transaction.timestamp + _fundsAdmin.getDirectSpendReversalCutoffSeconds();
+    if(block.timestamp > transactionExpiryDate) revert DirectSpendTransactionExpired();
   }
 }

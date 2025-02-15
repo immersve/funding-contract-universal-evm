@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 // Copyright 2023 Immersve
 
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.28;
 
 import { IErrors } from "./IErrors.sol";
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -24,22 +24,6 @@ interface IFundsAdmin is IErrors, IAccessControl {
   function SETTLER_ROLE() external pure returns(bytes32);
 
   /**
-   * Role for managing refund targets
-   */
-  //solhint-disable-next-line func-name-mixedcase
-  function REFUND_TARGET_MANAGER_ROLE() external pure returns(bytes32);
-
-  /**
-   * Role given to refund targets (FundsStorage instances) to validate that they authorized for refunds
-   *   After a FundsStorage address is registered as an Immersve Funding Channel
-   *   it can be used to create Funding Sources for funding cards. However, the FundsStorage will
-   *   not be allowed to receive refunds until it is also registered as a
-   *   refundee here.
-   */
-  //solhint-disable-next-line func-name-mixedcase
-  function REFUND_TARGET_ROLE() external pure returns(bytes32);
-
-  /**
     * @notice Event logged when a settlement is executed.
     * @param from The address of the FundsStorage that is settling.
     * @param amount The amount being settled.
@@ -50,10 +34,11 @@ interface IFundsAdmin is IErrors, IAccessControl {
   /**
     * @notice Event logged when a refund is executed.
     * @param refundee The address of the FundsStorage receiving the refund.
+    * @param sourceAddress The address of the FundsStorage receiving the refund.
     * @param amount The amount being refunded.
     * @param nonce The settlement nonce.
     */
-  event Refund(address refundee, uint256 amount, uint256 nonce);
+  event StorageLiquidityAdded(address refundee, address sourceAddress, uint256 amount, uint256 nonce);
 
   /**
     * @notice Get the current withdrawal nonce for a FundsStorage. The next
@@ -79,21 +64,87 @@ interface IFundsAdmin is IErrors, IAccessControl {
   ) external;
 
   /**
-    * @notice Trigger a refund back to a FundsStorage address. A token tranfer
-    *   will be issued from the refunderAddress. Only the settler
-    *   role can refund.
-    * @param refundee The FundsStorage address to refund to. Refunds will only
-    *   be allowed to addresses that have been whitelisted as a refund address.
-    * @param amount The amount to refund.
-    * @param nonce The refund nonce. The refund nonce must be one more than the
-    *   Funds Storage's current settlement nonce.
+    * @notice Add storage liquidity to a FundsStorage address. A token tranfer
+    *   will be issued from the sourceAddress. Only the settler
+    *   role can do this.
+    * @param refundee The FundsStorage address to refund to
+    * @param sourceAddress The source of funds for the liquidity addition
+    * @param amount The liquidity amount to add.
+    * @param nonce The settlement nonce. The settlement nonce must be one more than
+    *   the Funds Storage's current settlement nonce.
     */
-  function refund(
+  function addStorageLiquidity(
     address refundee,
+    address sourceAddress,
     uint256 amount,
     uint256 nonce,
     bytes32 merkleRoot
   ) external;
+
+  /**
+   * @notice Trigger a debit function call to the FundsStorage contract.
+   * Storage contract will check for available balance and allowance to try
+   * or reject the actual transfer
+   *
+   * @param storageAddress The Funds Storage address
+   * @param spender The account spending assets with Immersve
+   * @param amount The amount being spent by the spender
+   * @param idempotencyKey An idempotent key to avoid doing the same operation twice
+   */
+  function directSpendDebit(
+    address storageAddress,
+    address spender,
+    uint256 amount,
+    bytes32 idempotencyKey
+  ) external;
+
+  /**
+   * @notice Trigger a directSpendRefund function call to the FundsStorage contract.
+   * Storage contract will trigger an erc-20 transfer from the source address into
+   * the destinationAddress
+   *
+   * @param storageAddress The Funds Storage address
+   * @param destinationAddress The account receiving the refund
+   * @param sourceAddress The account providing liquidity for the refund
+   * @param amount The amount being spent by the spender
+   * @param idempotencyKey An idempotent key to avoid doing the same operation twice
+   */
+  function directSpendRefund(
+    address storageAddress,
+    address destinationAddress,
+    address sourceAddress,
+    uint256 amount,
+    bytes32 idempotencyKey
+  ) external;
+
+  /**
+   * @notice Trigger a directSpendReverse function call to the FundsStorage contract.
+   * Executes a payment reversal. Reversals are always linked to existing payments
+   * and cannot be higher than the original amount
+   *
+   * @param storageAddress The Funds Storage address
+   * @param originalIdempotencyKey The idempotency key of the original direct spend transaction
+   * @param amount The amount being reversed to the destination address
+   * @param idempotencyKey An idempotent key to avoid doing the same operation twice
+   */
+  function directSpendReverse(
+    address storageAddress,
+    bytes32 originalIdempotencyKey,
+    uint256 amount,
+    bytes32 idempotencyKey
+  ) external;
+
+  /**
+   * @notice Retrieves a direct spend transaction from a storage
+   * contract by it's idempotency key
+   *
+   * @param storageAddress The Partner FundsStorage contract address
+   * @param idempotencyKey The unique idempotency key
+   */
+  function directSpendGetTransaction(
+    address storageAddress,
+    bytes32 idempotencyKey
+  ) external view returns(DirectSpendTransaction memory);
 
   /**
     * @notice Update settlement addresses to include the given settlementAddress.
@@ -102,14 +153,6 @@ interface IFundsAdmin is IErrors, IAccessControl {
     *    to zero means that the token is not supported anymore.
     */
   function setSettlementAddress(address token, address settlementAddress) external;
-
-  /**
-   * @notice Verifies that the token is supported by the admin contract.
-   *  To be able to support a token, it's settlement address needs to be set
-   *  by {setSettlementAddress}
-   * @param token The ERC-20 token to verify
-   */
-  function requireTokenSupported(address token) external view;
 
   /**
     * @notice Get the settlement address for the specified token.
@@ -147,48 +190,11 @@ interface IFundsAdmin is IErrors, IAccessControl {
   function revokeSettlerRole(address settlerAddress) external;
 
   /**
-   * @notice Grant the REFUND_TARGET_MANAGER_ROLE.
-   * @param managerAddress The address that is allowed to configure refund targets
-   */
-  function grantRefundTargetManagerRole(address managerAddress) external;
-
-  /**
-    * @notice Revoke the REFUND_TARGET_MANAGER_ROLE.
-    * @param managerAddress The address that is allowed to configure refund targets
-    */
-  function revokeRefundTargetManagerRole(address managerAddress) external;
-
-  /**
     * @notice Check if the provided address is authorized to do withdrawals
     * @param signerAuthorizer The address to verify.
     */
-  function requireWithdrawalSignerAuthorized(address signerAuthorizer) external view;
-
-  /**
-    * @notice Update the refunder address. The refunder address is the source
-    *   for refunding ERC-20 transfers.
-    * @param refunderAddress The refunder address that approves this contract to
-    *   perform token transfers for refunds.
-    */
-  function setRefunderAddress(address refunderAddress) external;
-
-  /**
-   * @notice Get the refunder address. The refunder address is the source
-   *   for refunding ERC-20 transfers.
-   */
-  function getRefunderAddress() external view returns(address);
-
-  /**
-    * @notice Grant the REFUND_TARGET_MANAGER_ROLE.
-    * @param refundTarget The FundsStorage for which to allow refunds.
-    */
-  function grantRefundTargetRole(address refundTarget) external;
-
-  /**
-    * @notice Revoke the REFUND_TARGET_MANAGER_ROLE.
-    * @param refundTarget The FundsStorage for which to allow refunds.
-    */
-  function revokeRefundTargetRole(address refundTarget) external;
+  // solhint-disable-next-line private-vars-leading-underscore
+  function _requireWithdrawalSignerAuthorized(address signerAuthorizer) external view;
 
   /**
    * @notice Pause all token transfer operations
@@ -199,4 +205,18 @@ interface IFundsAdmin is IErrors, IAccessControl {
    * @notice Resume all token transfer operations
    */
   function unpause() external;
+
+  /**
+   * @notice Enables direct spend funding mode
+   */
+  function enableDirectSpend() external;
+
+  /**
+   * @notice Disable direct spend funding mode
+   */
+  function disableDirectSpend() external;
+
+  function setDirectSpendReversalCutoffSeconds(uint256 expiry) external;
+
+  function getDirectSpendReversalCutoffSeconds() external returns(uint256);
 }

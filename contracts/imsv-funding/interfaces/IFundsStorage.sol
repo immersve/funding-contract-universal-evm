@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 // Copyright 2023 Immersve
 
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.28;
 
 import { IErrors } from "./IErrors.sol";
 
@@ -11,6 +11,7 @@ import { IErrors } from "./IErrors.sol";
   *   from Immersve Funding Source APIs. To guarantee correct deposit addresses are
   *   used, the Immersve Funding Source APIs can be used to generate the required
   *   deposit transaction parameters.
+  *   Approvals are made via ERC-20 approval transactions.
   */
 interface IFundsStorage is IErrors {
 
@@ -28,6 +29,38 @@ interface IFundsStorage is IErrors {
     * @param withdrawalType The WithdrawalType that was performed.
     */
   event Withdrawal(address depositor, uint256 amount, uint256 expiryDate, uint256 nonce, WithdrawalType withdrawalType);
+
+  /**
+   * @notice Event logged when a direct spend debit operation is executed.
+   *    This will be called when funding source associated to the funding address
+   *    is authorized to spend with an associated Immersve card.
+   *
+   * @param fundingAddress The address to take funds from
+   * @param amount The amount being debited from the funding address
+   * @param idempotencyKey A unique key to make operation idempotent
+   */
+  event DirectSpendDebit(address fundingAddress, uint256 amount, bytes32 idempotencyKey);
+
+  /**
+   * @notice Event logged when a direct spend refund operation is executed.
+   *    This will be called when a payment is refunded by the card network
+   *
+   * @param fundingAddress The address to transfer the refund to
+   * @param amount The amount being refunded to the funding address
+   * @param idempotencyKey A unique key to make operation idempotent
+   */
+  event DirectSpendRefund(address fundingAddress, uint256 amount, bytes32 idempotencyKey);
+
+  /**
+   * @notice Event logged when a direct spend reversal operation is executed.
+   *    This will be called when a payment is reversed by the card network
+   *
+   * @param originalIdempotencyKey The idempotency key of the original direct spend transaction
+   * @param fundingAddress The address to transfer the reversal to
+   * @param amount The amount being reversed to the funding address
+   * @param idempotencyKey A unique key to make operation idempotent
+   */
+  event DirectSpendReversal(bytes32 originalIdempotencyKey, address fundingAddress, uint256 amount, bytes32 idempotencyKey);
 
   /**
     * @notice Get the name of the funds storage.
@@ -75,4 +108,67 @@ interface IFundsStorage is IErrors {
     * @param amount The amount being settled.
     */
   function transferToSettlementAddress(uint256 amount) external;
+
+  /**
+   * @notice Perform a debit directly from the spender wallet. Wallet must have
+   * granted the approval amount beforehand to the FundsStorage address
+   *
+   * @param spender The account spending assets with Immersve
+   * @param amount The amount being spent by the spender
+   * @param idempotencyKey An idempotent key to avoid doing the same operation twice
+   */
+  function directSpendDebit(address spender, uint256 amount, bytes32 idempotencyKey) external;
+
+  /**
+   * @notice Retrieves a direct spend transaction from it's idempotency key
+   * @param idempotencyKey The idempotency key of an existing transaction
+   */
+  function directSpendGetTransaction(bytes32 idempotencyKey) external view returns(DirectSpendTransaction memory);
+
+  /**
+   * @notice Storage contract will trigger an erc-20 transfer from the source address into
+   * the refundAddress
+   *
+   * @param destinationAddress The account receiving the refund
+   * @param sourceAddress The account providing liquidity for the refund
+   * @param amount The amount being refund to the destination address
+   * @param idempotencyKey An idempotent key to avoid doing the same operation twice
+   */
+  function directSpendRefund(
+    address destinationAddress,
+    address sourceAddress,
+    uint256 amount,
+    bytes32 idempotencyKey
+  ) external;
+
+  /**
+   * @notice Executes a payment reversal. Reversals are always linked to
+   * existing payments and cannot be higher than the original amount
+   *
+   * @param originalIdempotencyKey The idempotency key of the original direct spend transaction
+   * @param amount The amount being reversed to the destination address
+   * @param idempotencyKey An idempotent key to avoid doing the same operation twice
+   */
+  function directSpendReverse(
+    bytes32 originalIdempotencyKey,
+    uint256 amount,
+    bytes32 idempotencyKey
+  ) external;
+
+  /**
+   * @notice Executes a transfer from the sourceAddress into the storage address
+   * to add liquidity for reversal operations and withdrawals
+   *
+   * @param sourceAddress The origin of funds to add liquidity from
+   * @param amount The amount of funds being added to the storage contract
+   */
+  function addStorageLiquidity(
+    address sourceAddress,
+    uint256 amount
+  ) external;
+
+  /**
+   * @notice Gets the FundingMode configured for the FundsStorage instance
+   */
+  function getFundingMode() external returns(FundingMode);
 }

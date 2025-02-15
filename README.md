@@ -16,6 +16,13 @@ Copyright 2025 Immersve. All rights reserved.
 ## History
 
 
+### 1.1.0
+
+**Summary**: Approval based funding enhancements.<br>
+**Date**: {pending}<br>
+**Audit Report**: {pending}
+
+
 ### 1.0.0
 
 **Summary**: Universal deposit protocol version 1.0.<br>
