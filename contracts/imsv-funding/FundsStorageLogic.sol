@@ -153,7 +153,6 @@ contract FundsStorageLogic is IFundsStorage, ReentrancyGuardUpgradeable, EIP712U
     _requireFundingMode(FundingMode.APPROVAL);
     _requireFundsAdmin(msg.sender);
     _requireUniqueDirectSpendIdempotencyKey(idempotencyKey);
-    SafeERC20.safeTransferFrom(_token, sourceAddress, destinationAddress, amount);
     _directSpendTransactions[idempotencyKey] = DirectSpendTransaction(
       amount,
       block.timestamp,
@@ -162,7 +161,7 @@ contract FundsStorageLogic is IFundsStorage, ReentrancyGuardUpgradeable, EIP712U
       true, // exists?
       0
     );
-    emit DirectSpendRefund(destinationAddress, amount, idempotencyKey);
+    emit DirectSpendRefund(destinationAddress, sourceAddress, amount, idempotencyKey);
   }
 
   /// @inheritdoc IFundsStorage
