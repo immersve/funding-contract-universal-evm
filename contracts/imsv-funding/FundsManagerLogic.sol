@@ -14,6 +14,8 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable, IFundsStorageFactory, IFundsAdmin {
 
@@ -276,6 +278,8 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     _requireDirectSpendEnabled();
     IFundsStorage fundsStorage = _requireFundsStorage(storageAddress);
     fundsStorage.directSpendRefund(destinationAddress, sourceAddress, amount, idempotencyKey);
+    IERC20 erc20 = IERC20(fundsStorage.getToken());
+    SafeERC20.safeTransferFrom(erc20, sourceAddress, destinationAddress, amount);
   }
 
   /// @inheritdoc IFundsAdmin

@@ -46,10 +46,11 @@ interface IFundsStorage is IErrors {
    *    This will be called when a payment is refunded by the card network
    *
    * @param fundingAddress The address to transfer the refund to
+   * @param sourceAddress The address of the refund pool
    * @param amount The amount being refunded to the funding address
    * @param idempotencyKey A unique key to make operation idempotent
    */
-  event DirectSpendRefund(address fundingAddress, uint256 amount, bytes32 idempotencyKey);
+  event DirectSpendRefund(address fundingAddress, address sourceAddress, uint256 amount, bytes32 idempotencyKey);
 
   /**
    * @notice Event logged when a direct spend reversal operation is executed.
