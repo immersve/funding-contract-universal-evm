@@ -171,5 +171,5 @@ interface IFundsStorage is IErrors {
   /**
    * @notice Gets the FundingMode configured for the FundsStorage instance
    */
-  function getFundingMode() external returns(FundingMode);
+  function getFundingMode() external view returns(FundingMode);
 }
