@@ -217,7 +217,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     uint256 amount,
     uint256 nonce,
     bytes32 merkleRoot
-  ) external onlyRole(SETTLER_ROLE) whenNotPaused {
+  ) external onlyProxy onlyRole(SETTLER_ROLE) whenNotPaused {
     /*
      * The bytes32(0) is required for forwards compatibility. In future, when
      * merkle withdraw is implemented, the bytes32(0) merkle root will be
@@ -238,7 +238,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     uint256 amount,
     uint256 nonce,
     bytes32 merkleRoot
-  ) external onlyRole(SETTLER_ROLE) whenNotPaused {
+  ) external onlyProxy onlyRole(SETTLER_ROLE) whenNotPaused {
     if(merkleRoot != bytes32(0)) revert MerkleRootInvalid();
     if(nonce != _fundsStorageSettlementNonce[refundee] + 1) revert NonceOutOfSequence();
     IFundsStorage fundsStorage = _requireFundsStorage(refundee);
@@ -255,14 +255,14 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     address spender,
     uint256 amount,
     bytes32 idempotencyKey
-  ) external onlyRole(SETTLER_ROLE) whenNotPaused {
+  ) external onlyProxy onlyRole(SETTLER_ROLE) whenNotPaused {
     _requireDirectSpendEnabled();
     IFundsStorage fundsStorage = _requireFundsStorage(storageAddress);
     fundsStorage.directSpendDebit(spender, amount, idempotencyKey);
   }
 
   /// @inheritdoc IFundsAdmin
-  function directSpendGetTransaction(address storageAddress, bytes32 idempotencyKey) external view returns(DirectSpendTransaction memory) {
+  function directSpendGetTransaction(address storageAddress, bytes32 idempotencyKey) external onlyProxy view returns(DirectSpendTransaction memory) {
     IFundsStorage fundsStorage = _requireFundsStorage(storageAddress);
     return fundsStorage.directSpendGetTransaction(idempotencyKey);
   }
@@ -274,7 +274,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     address sourceAddress,
     uint256 amount,
     bytes32 idempotencyKey
-  ) external onlyRole(SETTLER_ROLE) whenNotPaused {
+  ) external onlyProxy onlyRole(SETTLER_ROLE) whenNotPaused {
     _requireDirectSpendEnabled();
     IFundsStorage fundsStorage = _requireFundsStorage(storageAddress);
     fundsStorage.directSpendRefund(destinationAddress, sourceAddress, amount, idempotencyKey);
@@ -288,7 +288,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     bytes32 originalIdempotencyKey,
     uint256 amount,
     bytes32 idempotencyKey
-  ) external onlyRole(SETTLER_ROLE) whenNotPaused {
+  ) external onlyProxy onlyRole(SETTLER_ROLE) whenNotPaused {
     _requireDirectSpendEnabled();
     IFundsStorage fundsStorage = _requireFundsStorage(storageAddress);
     fundsStorage.directSpendReverse(originalIdempotencyKey, amount, idempotencyKey);
@@ -314,7 +314,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
   }
 
   /// @inheritdoc IFundsAdmin
-  function setSettlementAddress(address token, address settlementAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function setSettlementAddress(address token, address settlementAddress) external onlyProxy onlyRole(DEFAULT_ADMIN_ROLE) {
     _tokenSettlementAddress[token] = settlementAddress;
   }
 
@@ -324,7 +324,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
   }
 
   /// @inheritdoc IFundsAdmin
-  function transferDefaultAdminRole(address adminAccount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function transferDefaultAdminRole(address adminAccount) external onlyProxy onlyRole(DEFAULT_ADMIN_ROLE) {
     _grantRole(DEFAULT_ADMIN_ROLE, adminAccount);
     _revokeRole(DEFAULT_ADMIN_ROLE, msg.sender);
   }
@@ -344,52 +344,52 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
   }
 
   /// @inheritdoc IFundsAdmin
-  function grantWithdrawalSignerRole(address withdrawalSigner) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function grantWithdrawalSignerRole(address withdrawalSigner) external onlyProxy onlyRole(DEFAULT_ADMIN_ROLE) {
     _grantRole(WITHDRAWAL_SIGNER_ROLE, withdrawalSigner);
   }
 
   /// @inheritdoc IFundsAdmin
-  function revokeWithdrawalSignerRole(address withdrawalSigner) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function revokeWithdrawalSignerRole(address withdrawalSigner) external onlyProxy onlyRole(DEFAULT_ADMIN_ROLE) {
     _revokeRole(WITHDRAWAL_SIGNER_ROLE, withdrawalSigner);
   }
 
   /// @inheritdoc IFundsAdmin
-  function grantSettlerRole(address settlerAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function grantSettlerRole(address settlerAddress) external onlyProxy onlyRole(DEFAULT_ADMIN_ROLE) {
     _grantRole(SETTLER_ROLE, settlerAddress);
   }
 
   /// @inheritdoc IFundsAdmin
-  function revokeSettlerRole(address settlerAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function revokeSettlerRole(address settlerAddress) external onlyProxy onlyRole(DEFAULT_ADMIN_ROLE) {
     _revokeRole(SETTLER_ROLE, settlerAddress);
   }
 
   /// @inheritdoc IFundsAdmin
   // solhint-disable-next-line private-vars-leading-underscore
-  function _requireWithdrawalSignerAuthorized(address signerAuthorizer) external view  whenNotPaused {
+  function _requireWithdrawalSignerAuthorized(address signerAuthorizer) external onlyProxy view  whenNotPaused {
     if (!hasRole(WITHDRAWAL_SIGNER_ROLE, signerAuthorizer)) revert SignatureUnauthorized();
   }
 
   /// @inheritdoc IFundsAdmin
-  function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function pause() external onlyProxy onlyRole(DEFAULT_ADMIN_ROLE) {
     _pause();
   }
 
   /// @inheritdoc IFundsAdmin
-  function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function unpause() external onlyProxy onlyRole(DEFAULT_ADMIN_ROLE) {
     _unpause();
   }
 
   /// @inheritdoc IFundsAdmin
-  function enableDirectSpend() external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function enableDirectSpend() external onlyProxy onlyRole(DEFAULT_ADMIN_ROLE) {
     _directSpendEnabled = true;
   }
 
   /// @inheritdoc IFundsAdmin
-  function disableDirectSpend() external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function disableDirectSpend() external onlyProxy onlyRole(DEFAULT_ADMIN_ROLE) {
     _directSpendEnabled = false;
   }
 
-  function setDirectSpendReversalCutoffSeconds(uint256 expiry) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function setDirectSpendReversalCutoffSeconds(uint256 expiry) external onlyProxy onlyRole(DEFAULT_ADMIN_ROLE) {
     if (expiry > 365 days) {
       // we don't allow expirations higher to a year to keep a low risk
       // of reversing already cleared operations
@@ -398,7 +398,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     _directSpendReversalCutoffSeconds = expiry;
   }
 
-  function getDirectSpendReversalCutoffSeconds() external view returns(uint256) {
+  function getDirectSpendReversalCutoffSeconds() external onlyProxy view returns(uint256) {
     return _directSpendReversalCutoffSeconds;
   }
 }
