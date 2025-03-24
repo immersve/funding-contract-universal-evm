@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 // Copyright 2025 Immersve
 
-pragma solidity ^0.8.28;
+pragma solidity 0.8.28;
 
 
 /**
