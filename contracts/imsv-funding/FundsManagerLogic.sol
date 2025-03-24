@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 // Copyright 2023 Immersve
 
-pragma solidity ^0.8.28;
+pragma solidity 0.8.28;
 
 import { IFundsStorageFactory } from "./interfaces/IFundsStorageFactory.sol";
 import { IFundsAdmin } from "./interfaces/IFundsAdmin.sol";
