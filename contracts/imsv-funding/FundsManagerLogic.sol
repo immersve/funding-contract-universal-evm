@@ -390,6 +390,11 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
   }
 
   function setDirectSpendReversalCutoffSeconds(uint256 expiry) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    if (expiry > 365 days) {
+      // we don't allow expirations higher to a year to keep a low risk
+      // of reversing already cleared operations
+      revert OperationUnsupported();
+    }
     _directSpendReversalCutoffSeconds = expiry;
   }
 
