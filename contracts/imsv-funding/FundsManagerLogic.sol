@@ -180,7 +180,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
   }
 
   /// @inheritdoc IFundsStorageFactory
-  function createFundsStorage(address token, string calldata name, FundingMode fundingMode) external onlyProxy returns(address) {
+  function createFundsStorage(address token, string calldata name, FundingMode fundingMode) external onlyProxy whenNotPaused returns(address) {
     _requireTokenSupported(token);
     /*
      * Salt for create2 will be sender address padded with first 96 bits of hash(name)
