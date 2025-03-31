@@ -122,11 +122,11 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     bool _proxiesInitialized = address(_fundsStorageBeacon) != address(0);
     if(!_proxiesInitialized) {
       _initialize();
+      _directSpendEnabled = false; // defaults to disabled
+      _directSpendReversalCutoffSeconds = 7 days;
     }
     _buildNumber = buildNumber;
     _commitId = commitId;
-    _directSpendEnabled = false; // defaults to disabled
-    _directSpendReversalCutoffSeconds = 7 days;
   }
 
   function _initialize() internal reinitializer(2) onlyProxy {
