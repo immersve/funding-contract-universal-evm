@@ -126,8 +126,6 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     }
     _buildNumber = buildNumber;
     _commitId = commitId;
-    _directSpendEnabled = false; // defaults to disabled
-    _directSpendReversalCutoffSeconds = 7 days;
   }
 
   function _initialize() internal reinitializer(2) onlyProxy {
@@ -135,6 +133,8 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     FundsManagerLogic impl = FundsManagerLogic(implAddress);
     _fundsStorageBeacon = new UpgradeableBeacon(impl.getStorageLogicAddress(), address(this));
     PausableUpgradeable.__Pausable_init();
+    _directSpendEnabled = false; // defaults to disabled
+    _directSpendReversalCutoffSeconds = 7 days;
   }
 
   /// @inheritdoc IFundsStorageFactory
