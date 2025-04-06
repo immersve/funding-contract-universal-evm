@@ -35,7 +35,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
    * This storage slot will NOT be initialized on a proxy.
    */
   /// @custom:oz-renamed-from _adminLogicAddress
-  address internal _managerLogicAddress;
+  address internal _masterLogicAddress;
 
   /**
     * A build number supplied when (re)initializing.
@@ -99,7 +99,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     // invoked in the context of the contract being deployed
     _disableInitializers();
     _storageLogicAddress = address(new FundsStorageLogic());
-    _managerLogicAddress = address(this);
+    _masterLogicAddress = address(this);
   }
 
   /**
@@ -152,7 +152,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
   }
 
   function getAdminLogicAddress() public view returns(address) {
-    return _managerLogicAddress;
+    return _masterLogicAddress;
   }
 
   function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
