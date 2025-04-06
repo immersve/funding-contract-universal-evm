@@ -122,8 +122,6 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     bool _proxiesInitialized = address(_fundsStorageBeacon) != address(0);
     if(!_proxiesInitialized) {
       _initialize();
-      _directSpendEnabled = false; // defaults to disabled
-      _directSpendReversalCutoffSeconds = 7 days;
     }
     _buildNumber = buildNumber;
     _commitId = commitId;
@@ -134,6 +132,8 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     FundsManagerLogic impl = FundsManagerLogic(implAddress);
     _fundsStorageBeacon = new UpgradeableBeacon(impl.getStorageLogicAddress(), address(this));
     PausableUpgradeable.__Pausable_init();
+    _directSpendEnabled = false; // defaults to disabled
+    _directSpendReversalCutoffSeconds = 7 days;
   }
 
   /// @inheritdoc IFundsStorageFactory
