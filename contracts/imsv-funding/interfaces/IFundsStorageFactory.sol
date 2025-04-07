@@ -43,7 +43,7 @@ interface IFundsStorageFactory is ITypes {
     * @notice Get the address of the FundsAdmin used to configure FundsStorage
   * instances created by this factory.
     */
-  function getAdminAddress() external view returns(address);
+  function getMasterAddress() external view returns(address);
 
   /**
    * @notice Create a new FundsStorage. The address of the deployed contract is
