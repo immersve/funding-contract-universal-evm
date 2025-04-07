@@ -147,11 +147,11 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
   }
 
   /// @inheritdoc IFundsStorageFactory
-  function getAdminAddress() public view returns(address) {
+  function getMasterAddress() public view returns(address) {
     return address(this);
   }
 
-  function getAdminLogicAddress() public view returns(address) {
+  function getMasterLogicAddress() public view returns(address) {
     return _masterLogicAddress;
   }
 
