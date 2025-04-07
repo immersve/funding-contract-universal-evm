@@ -3,7 +3,6 @@
 
 pragma solidity 0.8.28;
 
-import { IFundsStorageFactory } from "./interfaces/IFundsStorageFactory.sol";
 import { IFundsAdmin } from "./interfaces/IFundsAdmin.sol";
 import { IFundsStorage } from "./interfaces/IFundsStorage.sol";
 import { FundsStorageLogic } from "./FundsStorageLogic.sol";
@@ -17,7 +16,7 @@ import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/P
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable, IFundsStorageFactory, IFundsAdmin {
+contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable, IFundsAdmin {
 
   /**
    * The FundsStorageLogic beacon.
@@ -137,7 +136,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     _directSpendReversalCutoffSeconds = 7 days;
   }
 
-  /// @inheritdoc IFundsStorageFactory
+  /// @inheritdoc IFundsAdmin
   function getStorageBeaconAddress() public view returns(address) {
     return address(_fundsStorageBeacon);
   }
@@ -146,7 +145,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     return _storageLogicAddress;
   }
 
-  /// @inheritdoc IFundsStorageFactory
+  /// @inheritdoc IFundsAdmin
   function getMasterAddress() public view returns(address) {
     return address(this);
   }
@@ -165,22 +164,22 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     _fundsStorageBeacon.upgradeTo(newImpl.getStorageLogicAddress());
   }
 
-  /// @inheritdoc IFundsStorageFactory
+  /// @inheritdoc IFundsAdmin
   function getVersion() external pure returns(uint256) {
     return 1;
   }
 
-  /// @inheritdoc IFundsStorageFactory
+  /// @inheritdoc IFundsAdmin
   function getCommitId() external view returns(string memory) {
     return _commitId;
   }
 
-  /// @inheritdoc IFundsStorageFactory
+  /// @inheritdoc IFundsAdmin
   function getBuildNumber() external view returns(string memory) {
     return _buildNumber;
   }
 
-  /// @inheritdoc IFundsStorageFactory
+  /// @inheritdoc IFundsAdmin
   function createFundsStorage(address token, string calldata name, FundingMode fundingMode) external onlyProxy whenNotPaused returns(address) {
     _requireTokenSupported(token);
     /*
@@ -202,7 +201,7 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
     return address(proxy);
   }
 
-  /// @inheritdoc IFundsStorageFactory
+  /// @inheritdoc IFundsAdmin
   function isFundsStorage(address addr) public view returns(bool) {
     return _fundsStorageInstances[addr].isInstance;
   }
