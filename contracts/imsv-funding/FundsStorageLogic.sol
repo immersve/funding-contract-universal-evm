@@ -61,6 +61,7 @@ contract FundsStorageLogic is IFundsStorage, ReentrancyGuardUpgradeable, EIP712U
      * Initialize the EIP-712 domain separator used when verifying withdraw signatures.
      */
     __EIP712_init("Immersve.FundsStorageLogic", "1");
+    __ReentrancyGuard_init();
   }
 
   /// @inheritdoc IFundsStorage
