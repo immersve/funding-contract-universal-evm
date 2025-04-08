@@ -370,6 +370,12 @@ contract FundsManagerLogic is AccessControlUpgradeable, UUPSUpgradeable, Pausabl
   }
 
   /// @inheritdoc IFundsAdmin
+  // solhint-disable-next-line private-vars-leading-underscore
+  function _requireMasterNotPaused() external onlyProxy view {
+    _requireNotPaused(); // from PausableUpgradeable
+  }
+
+  /// @inheritdoc IFundsAdmin
   function pause() external onlyProxy onlyRole(DEFAULT_ADMIN_ROLE) {
     _pause();
   }

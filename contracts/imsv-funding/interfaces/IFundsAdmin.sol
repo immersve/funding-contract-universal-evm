@@ -247,6 +247,11 @@ interface IFundsAdmin is IErrors, IAccessControl {
   function _requireWithdrawalSignerAuthorized(address signerAuthorizer) external view;
 
   /**
+   * @notice Requires master contract to be unpaused. Otherwise, an error is thrown
+   */
+  // solhint-disable-next-line private-vars-leading-underscore
+  function _requireMasterNotPaused() external view;
+  /**
    * @notice Pause all token transfer operations
    */
   function pause() external;

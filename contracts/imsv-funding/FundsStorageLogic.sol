@@ -91,6 +91,7 @@ contract FundsStorageLogic is IFundsStorage, ReentrancyGuardUpgradeable, EIP712U
       uint256 nonce,
       bytes memory _signature
   ) external nonReentrant {
+      _requireMasterNotPaused();
       _requireFundingMode(FundingMode.DEPOSIT);
       if(block.timestamp > expiryDate) revert ExpiryDatePassed();
       // check if the funds were already withdrawn with this nonce
@@ -116,6 +117,7 @@ contract FundsStorageLogic is IFundsStorage, ReentrancyGuardUpgradeable, EIP712U
 
   /// @inheritdoc IFundsStorage
   function transferToSettlementAddress(uint256 amount) external {
+    _requireMasterNotPaused();
     _requireFundsAdmin(msg.sender);
     address settlementAddress = _fundsAdmin.getSettlementAddress(address(_token));
     if(settlementAddress == address(0)) revert TokenNotSupported({ token: address(_token) });
@@ -124,6 +126,7 @@ contract FundsStorageLogic is IFundsStorage, ReentrancyGuardUpgradeable, EIP712U
 
   /// @inheritdoc IFundsStorage
   function directSpendDebit(address spender, uint256 amount, bytes32 idempotencyKey) external {
+    _requireMasterNotPaused();
     _requireFundingMode(FundingMode.APPROVAL);
     _requireFundsAdmin(msg.sender);
     _requireUniqueDirectSpendIdempotencyKey(idempotencyKey);
@@ -151,6 +154,7 @@ contract FundsStorageLogic is IFundsStorage, ReentrancyGuardUpgradeable, EIP712U
     uint256 amount,
     bytes32 idempotencyKey
   ) external {
+    _requireMasterNotPaused();
     _requireFundingMode(FundingMode.APPROVAL);
     _requireFundsAdmin(msg.sender);
     _requireUniqueDirectSpendIdempotencyKey(idempotencyKey);
@@ -171,6 +175,7 @@ contract FundsStorageLogic is IFundsStorage, ReentrancyGuardUpgradeable, EIP712U
     uint256 amount,
     bytes32 idempotencyKey
   ) external {
+    _requireMasterNotPaused();
     _requireFundingMode(FundingMode.APPROVAL);
     _requireFundsAdmin(msg.sender);
     _requireUniqueDirectSpendIdempotencyKey(idempotencyKey);
@@ -199,6 +204,7 @@ contract FundsStorageLogic is IFundsStorage, ReentrancyGuardUpgradeable, EIP712U
     address sourceAddress,
     uint256 amount
   ) external {
+    _requireMasterNotPaused();
     _requireFundsAdmin(msg.sender);
     IERC20 token = IERC20(_token);
     SafeERC20.safeTransferFrom(token, sourceAddress, address(this), amount);
@@ -221,5 +227,9 @@ contract FundsStorageLogic is IFundsStorage, ReentrancyGuardUpgradeable, EIP712U
   function _requireUnexpiredDirectSpendTransaction(DirectSpendTransaction memory transaction) internal {
     uint256 transactionExpiryDate = transaction.timestamp + _fundsAdmin.getDirectSpendReversalCutoffSeconds();
     if(block.timestamp > transactionExpiryDate) revert DirectSpendTransactionExpired();
+  }
+
+  function _requireMasterNotPaused() internal view {
+    _fundsAdmin._requireMasterNotPaused();
   }
 }
