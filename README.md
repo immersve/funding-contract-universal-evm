@@ -22,6 +22,38 @@ Copyright 2025 Immersve. All rights reserved.
 **Date**: {pending}<br>
 **Audit Report**: {pending}
 
+**Added**
+- `directSpendDebit()` _(Master Contract)_
+- `directSpendRefund()` _(Master Contract)_
+- `directSpendReverse()` _(Master Contract)_
+- `directSpendGetTransaction()` _(Master Contract)_
+- `enableDirectSpend()` _(Master Contract)_
+- `disableDirectSpend()` _(Master Contract)_
+- `setDirectSpendReversalCutoffSeconds()` _(Master Contract)_
+- `getDirectSpendReversalCutoffSeconds()` _(Master Contract)_
+- `addStorageLiquidity()` _(Master Contract)_
+- `getFundingMode()` _(Child Contract)_
+
+**Changed**
+- `createFundsStorage()` _(Master Contract)_ expects funding mode.
+- Required Solidity version 0.8.21 → 0.8.28.
+- All proxied functions explicitly fail when not called via proxy.
+- Withdrawals and settlements are denied when contract paused.
+- Master contract interfaces merged.
+
+**Renamed**
+- `getAdminAddress()` _(Master Contract)_ → `getMasterAddress()`
+- `getAdminLogicAddress()` _(Master Contract)_ → `getMasterLogicAddress()`
+
+**Removed**
+- refund() _(Master Contract)_
+- grantRefundTargetManagerRole() _(Master Contract)_
+- revokeRefundTargetManagerRole() _(Master Contract)_
+- setRefunderAddress() _(Master Contract)_
+- getRefunderAddress() _(Master Contract)_
+- REFUND_TARGET_MANAGER_ROLE _(Master Contract)_
+- REFUND_TARGET_ROLE _(Master Contract)_
+
 
 ### 1.0.0
 
