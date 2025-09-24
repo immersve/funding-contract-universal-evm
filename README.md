@@ -19,8 +19,8 @@ Copyright 2025 Immersve. All rights reserved.
 ### 1.1.0
 
 **Summary**: Approval based funding enhancements.<br>
-**Date**: {pending}<br>
-**Audit Report**: {pending}
+**Date**: 2025-03-13<br>
+**Audit Report**: [Hashlock Audit Report (PDF)](https://static.immersve.com/public-reports/smart-contracts/funding-contract-universal-evm/202503-hashlock-Immersve-2nd-Smart-Contract-Audit-Report-Final-Report-v3.pdf)<br>
 
 **Added**
 - `directSpendDebit()` _(Master Contract)_
